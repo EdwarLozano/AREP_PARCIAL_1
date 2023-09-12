@@ -1,9 +1,14 @@
 package edu.eci.arep;
+
 import java.net.*;
 import java.io.*;
+import java.lang.reflect.Method;
+import java.lang.reflect.Field;
+import java.lang.reflect.InvocationTargetException;
+
 
 public class HttpServer {
-    public static void main(String[] args) throws IOException {
+    public static void main(String[] args) throws IOException, ClassNotFoundException, NoSuchMethodException {
         ServerSocket serverSocket = null;
         try {
             serverSocket = new ServerSocket(36000);
@@ -13,6 +18,8 @@ public class HttpServer {
         }
 
         Socket clientSocket = null;
+
+        String path="";
         boolean running = true;
         while (running) {
             try {
@@ -33,58 +40,53 @@ public class HttpServer {
                     break;
                 }
             }
+
+            String respuesta = "<ul>";
+            if (path.contains("/consulta?comando=")) {
+                String command = path.substring(18);
+                if(path.contains("Class")) {
+                    respuesta += classImp(command, respuesta);
+                } else if (path.contains("Invoke")) {
+                    respuesta += invokeImp(command, respuesta);
+                }
+            }
+
+            respuesta += "</ul>";
+
+
             outputLine = "HTTP/1.1 200 OK\r\n" +
                     "Content-Type: text/html\r\n" +
                     "\r\n" +
                     "<!DOCTYPE html>\n" +
                     "<html>\n" +
-                    "    <head>\n" +
-                    "        <title>Form Example</title>\n" +
-                    "        <meta charset=\"UTF-8\">\n" +
-                    "        <meta name=\"viewport\" content=\"width=device-width, initial-scale=1.0\">\n" +
-                    "    </head>\n" +
-                    "    <body>\n" +
-                    "        <h1>Form with GET</h1>\n" +
-                    "        <form action=\"/hello\">\n" +
-                    "            <label for=\"name\">Name:</label><br>\n" +
-                    "            <input type=\"text\" id=\"name\" name=\"name\" value=\"John\"><br><br>\n" +
-                    "            <input type=\"button\" value=\"Submit\" onclick=\"loadGetMsg()\">\n" +
-                    "        </form> \n" +
-                    "        <div id=\"getrespmsg\"></div>\n" +
+                    "<head>\n" +
+                    "    <title>Form Example</title>\n" +
+                    "    <meta charset=\"UTF-8\">\n" +
+                    "    <meta name=\"viewport\" content=\"width=device-width, initial-scale=1.0\">\n" +
+                    "</head>\n" +
+                    "<body>\n" +
+                    "<h1>Name of the class</h1>\n" +
+                    "<form action=\"/consulta\">\n" +
+                    "    <label for=\"comando\">Path:</label><br>\n" +
+                    "    <input type=\"text\" id=\"comando\" name=\"comando\"><br><br>\n" +
+                    "    <input type=\"button\" value=\"Submit\" onclick=\"loadGetMsg()\">\n" +
+                    "</form>\n" +
+                    "<div id=\"getrespmsg\">" + respuesta +"</div>\n" +
                     "\n" +
-                    "        <script>\n" +
-                    "            function loadGetMsg() {\n" +
-                    "                let nameVar = document.getElementById(\"name\").value;\n" +
-                    "                const xhttp = new XMLHttpRequest();\n" +
-                    "                xhttp.onload = function() {\n" +
-                    "                    document.getElementById(\"getrespmsg\").innerHTML =\n" +
-                    "                    this.responseText;\n" +
-                    "                }\n" +
-                    "                xhttp.open(\"GET\", \"/hello?name=\"+nameVar);\n" +
-                    "                xhttp.send();\n" +
+                    "<script>\n" +
+                    "        function loadGetMsg() {\n" +
+                    "            let nameVar = document.getElementById(\"comando\").value;\n" +
+                    "            const xhttp = new XMLHttpRequest();\n" +
+                    "            xhttp.onload = function() {\n" +
+                    "                document.getElementById(\"getrespmsg\").innerHTML =\n" +
+                    "                this.responseText;\n" +
                     "            }\n" +
-                    "        </script>\n" +
-                    "\n" +
-                    "        <h1>Form with POST</h1>\n" +
-                    "        <form action=\"/hellopost\">\n" +
-                    "            <label for=\"postname\">Name:</label><br>\n" +
-                    "            <input type=\"text\" id=\"postname\" name=\"name\" value=\"John\"><br><br>\n" +
-                    "            <input type=\"button\" value=\"Submit\" onclick=\"loadPostMsg(postname)\">\n" +
-                    "        </form>\n" +
-                    "        \n" +
-                    "        <div id=\"postrespmsg\"></div>\n" +
-                    "        \n" +
-                    "        <script>\n" +
-                    "            function loadPostMsg(name){\n" +
-                    "                let url = \"/hellopost?name=\" + name.value;\n" +
-                    "\n" +
-                    "                fetch (url, {method: 'POST'})\n" +
-                    "                    .then(x => x.text())\n" +
-                    "                    .then(y => document.getElementById(\"postrespmsg\").innerHTML = y);\n" +
-                    "            }\n" +
-                    "        </script>\n" +
-                    "    </body>\n" +
-                    "</html>\n";
+                    "            xhttp.open(\"GET\", \"/consulta?comando=\"+nameVar);\n" +
+                    "            xhttp.send();\n" +
+                    "        }\n" +
+                    "</script>\n" +
+                    "</body>\n" +
+                    "</html>";
             out.println(outputLine);
             out.close();
             in.close();
@@ -92,7 +94,58 @@ public class HttpServer {
         }
         serverSocket.close();
     }
+
+    private static String classImp(String command, String respuesta) throws ClassNotFoundException {
+        String javaMethod = command.substring(6).replace(")","");
+        Class c = Class.forName(javaMethod);
+        Method[] m = c.getDeclaredMethods();
+        Field[] f = c.getDeclaredFields();
+
+        for(Method method : m) {
+            respuesta += "<li>" + method.getName() + "</li>";
+        }
+        for(Field fields : f) {
+            respuesta += "<li>" + fields.getName() + "</li>";
+        }
+        return respuesta;
+    }
+
+    private static String invokeImp(String command, String respuesta) throws ClassNotFoundException, NoSuchMethodException {
+
+        String javaMethod = command.substring(7).replace(")","");
+        String[] myInvoke = javaMethod.split(",");
+        String myClass = myInvoke[0];
+        String myMethod = myInvoke[1];
+
+        System.out.println("class:  " + myClass + " + myMethod: " + myMethod );
+        Class c = Class.forName(myClass);
+        Method m = c.getDeclaredMethod(myMethod);
+
+        String response = "";
+        try {
+            response = String.valueOf(m.invoke(null));
+        } catch (IllegalAccessException e) {
+            throw new RuntimeException(e);
+        } catch (InvocationTargetException e) {
+            throw new RuntimeException(e);
+        }
+
+        respuesta += response;
+
+        return respuesta;
+    }
+
 }
+
+
+
+
+
+
+
+
+
+
 
 
 
